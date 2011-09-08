@@ -1,0 +1,43 @@
+
+@----------------------------------------------------------@
+|        PLINK!       |     v1.07      |   10/Aug/2009     |
+|----------------------------------------------------------|
+|  (C) 2009 Shaun Purcell, GNU General Public License, v2  |
+|----------------------------------------------------------|
+|  For documentation, citation & bug-report instructions:  |
+|        http://pngu.mgh.harvard.edu/purcell/plink/        |
+@----------------------------------------------------------@
+
+Skipping web check... [ --noweb ] 
+Writing this text to log file [ testdata.log ]
+Analysis started: Tue Sep  6 16:02:14 2011
+
+Options in effect:
+	--simulate-qt testdata.sim
+	--make-bed
+	--out testdata
+	--simulate-n 1000
+	--noweb
+
+Reading QT simulation parameters from [ testdata.sim ]
+Writing SNP population frequencies to [ testdata.simfreq ]
+Read 2 sets of SNPs, specifying 10000 SNPs in total
+Simulating QT for 1000 individuals 
+Total QTL variance is 0.4
+Simulating disease variants (direct association)
+
+Before frequency and genotyping pruning, there are 10000 SNPs
+1000 founders and 0 non-founders found
+Total genotyping rate in remaining individuals is 1
+0 SNPs failed missingness test ( GENO > 1 )
+0 SNPs failed frequency test ( MAF < 0 )
+After frequency and genotyping pruning, there are 10000 SNPs
+After filtering, 1000 individuals with non-missing status
+After filtering, 0 males, 1000 females, and 0 of unspecified sex
+Writing pedigree information to [ testdata.fam ] 
+Writing map (extended format) information to [ testdata.bim ] 
+Writing genotype bitfile to [ testdata.bed ] 
+Using (default) SNP-major mode
+
+Analysis finished: Tue Sep  6 16:02:15 2011
+
