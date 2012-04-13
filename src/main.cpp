@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * main.cpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
 
 
 // these should be replaced automatically by release script
-#define VERSION_MAJOR 1
+#define VERSION_MAJOR 2
 #define VERSION_MINOR 0
 
 #include <iostream>
@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
 {
   printf("-------------------------------------------------------------\n"
          "BMAGWA software version %d.%d\n"
-         "http://www.lce.hut.fi/research/mm/bmagwa/\n"
+         "http://becs.aalto.fi/en/research/bayes/bmagwa/\n"
          "-------------------------------------------------------------\n\n",
          VERSION_MAJOR, VERSION_MINOR);
   if (argc != 2){
@@ -111,8 +111,7 @@ int main(int argc, char* argv[])
 void* Run_sampler(void* threadarg){
   bmagwa::Sampler *sampler = reinterpret_cast<bmagwa::Sampler*>(threadarg);
 
-  sampler->initialize_p_proposal();
-  sampler->save_p_proposal();
+  sampler->initialize_p_proposal_flat();
 
   // run sampler
   sampler->sample();

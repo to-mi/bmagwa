@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * vector.cpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -92,8 +92,8 @@ void VectorView::set_to_product(const MatrixView& m, const VectorView& v,
     assert(m.rows() == length());
   }
 
-  cblas_dgemv(CblasColMajor, tr, m.rows(), m.cols(), 1.0, m.data_,
-              m.stride(), v.data_, 1, 0.0, data_, 1);
+  cblas_dgemv(CblasColMajor, tr, m.rows(), m.cols(), 1.0, m.data(),
+              m.stride(), v.data(), 1, 0.0, data_, 1);
 }
 
 void VectorView::set_to_vector_diff(const VectorView& v1, const VectorView& v2)
@@ -159,7 +159,7 @@ void VectorView::multiply_by_triangularmatrix(const SymmMatrixView& m,
   assert(m.length() == length());
 
   cblas_dtrmv(CblasColMajor, CblasUpper, tr, CblasNonUnit,
-                m.length(), m.data_, m.stride(), data_, 1);
+                m.length(), m.data(), m.stride(), data_, 1);
 }
 
 void VectorView::multiply_by_invtriangularmatrix(const SymmMatrixView &m,
@@ -174,7 +174,7 @@ void VectorView::multiply_by_invtriangularmatrix(const SymmMatrixView &m,
   assert(m.length() == length());
 
   cblas_dtrsv(CblasColMajor, CblasUpper, tr, CblasNonUnit,
-                m.length(), m.data_, m.stride(), data_, 1);
+                m.length(), m.data(), m.stride(), data_, 1);
 }
 
 void VectorView::add_vector(const VectorView& v)
@@ -208,9 +208,9 @@ Vector& Vector::operator=(const Vector &v)
 Vector& Vector::operator=(const VectorView &v)
 {
   if (this != &v){
-    assert(length_ == v.length_);
+    assert(length_ == v.length());
     for (size_t i = 0; i < length_; ++i)
-      data_[i] = v.data_[i];
+      data_[i] = v.data()[i];
   }
   return *this;
 }

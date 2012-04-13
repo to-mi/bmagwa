@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * vector.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,6 +43,11 @@ class SymmMatrixView;
  *  own or allocate memory for its elements. VectorView is base class of
  *  Vector, which include memory allocation. VectorView can also be mapped to
  *  plain double arrays.
+ *
+ *  Does not do bounds checking!
+ *  Mostly a simple wrapper to BLAS and LAPACK operations.
+ *
+ *  Subclass Vector provides memory allocation.
  */
 class VectorView
 {
@@ -94,12 +99,18 @@ class VectorView
 
     // getters and setters
     double* data() { return data_; }
-    const size_t& length() const { return length_; }
-    const size_t& length_mem() const
+    double* data() const { return data_; }
+    const size_t length() const { return length_; }
+    const size_t length_mem() const
     {
       return length_mem_;
     }
     VectorView block(const size_t begin, const size_t length)
+    {
+      assert(begin + length <= length_);
+      return VectorView(data_ + begin, length_mem_ - length, length);
+    }
+    const VectorView block(const size_t begin, const size_t length) const
     {
       assert(begin + length <= length_);
       return VectorView(data_ + begin, length_mem_ - length, length);
@@ -149,8 +160,8 @@ class VectorView
     double* data_;
     size_t length_, length_mem_;
 
-  private:
-    friend class Vector;
+  /*private:
+    friend class Vector;*/
 };
 
 //! A column vector which owns its elements.
@@ -181,11 +192,11 @@ class Vector : public VectorView
         data_[i] = v.data_[i];
     }
 
-    Vector(const VectorView &v) : VectorView(NULL, v.length_mem_, v.length_)
+    Vector(const VectorView &v) : VectorView(NULL, v.length_mem(), v.length())
     {
       init();
       for (size_t i = 0; i < length_; ++i)
-        data_[i] = v.data_[i];
+        data_[i] = v.data()[i];
     }
 
     ~Vector()
@@ -207,6 +218,8 @@ class Vector : public VectorView
       set_to(val);
       return *this;
     }
+
+    const double* data() const { return data_; }
 
     void remove(const size_t ind)
     {

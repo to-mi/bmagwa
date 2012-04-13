@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * matrix.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,25 +34,40 @@ namespace bmagwa {
 // forward declarations
 class SymmMatrixView;
 
+//! A matrix which does not own its elements.
+/*!
+ *  MatrixView implements most of the functionality of general matrices, but
+ *  does not own or allocate memory for its elements. MatrixView is base class
+ *  of Matrix, which include memory allocation. MatrixView can also be mapped to
+ *  plain double arrays.
+ *
+ *  Does not do bounds checking!
+ *  Mostly a simple wrapper to BLAS and LAPACK operations.
+ *
+ *  Subclass Matrix provides memory allocation.
+ */
 class MatrixView
 {
   public:
     // constructors and destructors
     MatrixView(double *data, const size_t rows_mem, const size_t cols_mem)
     : data_(data), rows_(rows_mem), cols_(cols_mem),
-      rows_mem_(rows_mem), cols_mem_(cols_mem)
+      rows_mem_(rows_mem), cols_mem_(cols_mem), stride_(rows_mem)
     {}
 
     MatrixView(double *data, const size_t rows_mem, const size_t cols_mem,
                  const size_t rows, const size_t cols)
     : data_(data), rows_(rows), cols_(cols),
-      rows_mem_(rows_mem), cols_mem_(cols_mem)
+      rows_mem_(rows_mem), cols_mem_(cols_mem), stride_(rows_mem)
     {}
 
     MatrixView(const MatrixView &m)
     : data_(m.data_), rows_(m.rows_), cols_(m.cols_),
-      rows_mem_(m.rows_mem_), cols_mem_(m.cols_mem_)
+      rows_mem_(m.rows_mem_), cols_mem_(m.cols_mem_), stride_(m.stride())
     {}
+
+    //! Takes a block above diagonal of a symmetric or upper triangular matrix.
+    MatrixView(const SymmMatrixView &m, size_t col);
 
     virtual ~MatrixView() {}
 
@@ -73,12 +88,16 @@ class MatrixView
       set_to(val);
       return *this;
     }
+    MatrixView& operator*=(const double val);
 
     // getters and setters
     double* data() { return data_; }
-    const size_t &rows() const { return rows_; }
-    const size_t &cols() const { return cols_; }
-    const size_t &stride() const { return rows_mem_; }
+    double* data() const { return data_; }
+    const size_t rows() const { return rows_; }
+    const size_t cols() const { return cols_; }
+    const size_t rows_mem() const { return rows_mem_; }
+    const size_t cols_mem() const { return cols_mem_; }
+    const size_t stride() const { return stride_; }
     VectorView column(const size_t col)
     {
       assert(col < cols());
@@ -90,6 +109,12 @@ class MatrixView
       return VectorView(data_ + col * stride(), rows_mem_, rows_);
     }
     MatrixView columnblock(const size_t begin_col, const size_t ncols)
+    {
+      assert(begin_col < cols() && begin_col + ncols <= cols());
+      return MatrixView(data_ + begin_col * stride(), rows_mem_,
+                        cols_mem_ - begin_col, rows_, ncols);
+    }
+    const MatrixView columnblock(const size_t begin_col, const size_t ncols) const
     {
       assert(begin_col < cols() && begin_col + ncols <= cols());
       return MatrixView(data_ + begin_col * stride(), rows_mem_,
@@ -110,14 +135,15 @@ class MatrixView
 
   protected:
     double* data_;
-    size_t rows_, cols_, rows_mem_, cols_mem_;
-
-  private:
-    friend class SymmMatrixView;
-    friend class VectorView;
-    friend class Matrix;
+    size_t rows_, cols_, rows_mem_, cols_mem_, stride_;
 };
 
+//! A matrix which owns its elements.
+/*!
+ *  Matrix extends MatrixView to provide memory allocation and freeing.
+ *
+ *  TODO: reallocation? This would invalidate any mapped MatrixViews.
+ */
 class Matrix : public MatrixView
 {
   public:
@@ -135,24 +161,24 @@ class Matrix : public MatrixView
     }
 
     Matrix(const Matrix &m)
-    : MatrixView(NULL, m.rows_mem_, m.cols_mem_, m.rows_, m.cols_)
+    : MatrixView(NULL, m.rows_mem(), m.cols_mem(), m.rows(), m.cols())
     {
       init();
       for (size_t c = 0; c < cols_; ++c) {
         size_t offset = c * stride();
         for (size_t r = 0; r < rows_; ++r)
-          data_[r + offset] = m.data_[r + offset];
+          data_[r + offset] = m.data()[r + offset];
       }
     }
 
     Matrix(const MatrixView &m)
-    : MatrixView(NULL, m.rows_mem_, m.cols_mem_, m.rows_, m.cols_)
+    : MatrixView(NULL, m.rows_mem(), m.cols_mem(), m.rows(), m.cols())
     {
       init();
       for (size_t c = 0; c < cols_; ++c) {
         size_t offset = c * stride();
         for (size_t r = 0; r < rows_; ++r)
-          data_[r + offset] = m.data_[r + offset];
+          data_[r + offset] = m.data()[r + offset];
       }
     }
 
@@ -177,6 +203,8 @@ class Matrix : public MatrixView
     //! Does a copy of the values (requires equal sized matrices).
     Matrix& operator=(const MatrixView& m);
 
+    const double* data() const { return data_; }
+
     void remove_column(const size_t col)
     {
     	assert(col < cols());
@@ -191,6 +219,7 @@ class Matrix : public MatrixView
 #ifdef N_ALIGN
       rows_mem_ = (size_t)ceil(((double)rows_mem_) / N_ALIGN) * N_ALIGN;
       cols_mem_ = (size_t)ceil(((double)cols_mem_) / N_ALIGN) * N_ALIGN;
+      stride_ = rows_mem_;
       int res = posix_memalign((void **)&data_, N_ALIGN,
                                 rows_mem_ * cols_mem_ * sizeof(double));
       if (res != 0) throw std::bad_alloc();

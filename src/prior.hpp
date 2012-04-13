@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * prior.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,24 +31,36 @@
 
 namespace bmagwa {
 
+// forward declaration
+class Model;
+
+//! Implements the prior structure and sampling procedures.
 class Prior
 {
   public:
-    double n_plus_nu, minus_n_plus_nu_2, nus2_plus_yy;
+    const double n_plus_nu, minus_n_plus_nu_2, nus2_plus_yy;
+    const double mu_alpha;
+    const bool use_individual_tau2;
 
     Prior(const Data* data, const DataModel* data_model,
           const double* _types_prior,
           const double e_qg, const double var_qg,
           const Vector& _inv_tau2_e,
           const double _nu_sigma2, const double _s2_sigma2,
-          const double* _nu_tau2, const double* _s2_tau2)
+          const double* _nu_tau2, const double* _s2_tau2,
+          const double _mu_alpha, const bool _use_individual_tau2)
     : n_plus_nu(data->n + _nu_sigma2), minus_n_plus_nu_2(-0.5 * n_plus_nu),
       nus2_plus_yy(_nu_sigma2 * _s2_sigma2 + data->yy()),
-      m_g(data->m_g), m_e(data->m_e), n_types(data_model->n_types),
+      mu_alpha(_mu_alpha),
+      use_individual_tau2(_use_individual_tau2),
+      n(data->n), m_g(data->m_g), m_e(data->m_e), n_types(data_model->n_types),
       log_n_types(log(n_types)), g_a(NAN), g_b(NAN), inv_tau2_e(_inv_tau2_e),
       nu_sigma2(_nu_sigma2), s2_sigma2(_s2_sigma2),
       nus2_sigma2(nu_sigma2 * s2_sigma2),
-      types_prior_sum(0)
+      alpha_(std::max(0.5, mu_alpha)),
+      alpha2_(alpha_ * alpha_),
+      types_prior_sum(0),
+      pve_pow(0.5 * (0.35 - 1.0))
     {
       // check sigma2 params
       if (s2_sigma2 <= 0){
@@ -97,12 +109,13 @@ class Prior
 
           nus2_tau2[i] = nu_tau2[i] * s2_tau2[i];
           // init to expectation (or smaller if nu_tau2 < 2.1)
-          t2_tau2[i] = nus2_tau2[i] / std::max(0.1, (nu_tau2[i] - 2));
+          double tau2_init = nus2_tau2[i] / std::max(0.1, (nu_tau2[i] - 2));
+          inv_tau2_alpha2[i] = 1.0 / (alpha2_ * tau2_init);
         } else {
           nu_tau2[i] = NAN;
           s2_tau2[i] = NAN;
           nus2_tau2[i] = NAN;
-          t2_tau2[i] = NAN;
+          inv_tau2_alpha2[i] = NAN;
         }
       }
       allow_terms[4] = false; // never allow AH (instead it's split to A and H)
@@ -110,14 +123,23 @@ class Prior
 
     ~Prior() {}
 
-    const double& get_tau2_value(const DataModel::ef_t type) const
+    const double& get_inv_tau2_alpha2_value(const DataModel::ef_t type) const
     {
-      return t2_tau2[type];
+      if (use_individual_tau2)
+        throw std::runtime_error("Cannot call get_inv_tau2_alpha2_value if use_individual_tau2 is set.");
+
+      return inv_tau2_alpha2[type];
     }
-    void set_tau2_value(const DataModel::ef_t type, const double val)
+
+    const double& alpha() const
     {
-      t2_tau2[type] = val;
+      return alpha_;
     }
+    const double& alpha2() const
+    {
+      return alpha2_;
+    }
+    void set_alpha(const double val, Model* model);
 
     double compute_log_change_on_add(const int* Ns_old, const int n_loci_old,
                                      const DataModel::ef_t type) const
@@ -160,61 +182,40 @@ class Prior
       return lp;
     }
 
-    void sample_tau2(const std::vector<DataModel::ef_t>& x_types,
-                     const VectorView& beta, const double sigma2, Rand& rng)
+    void set_inv_tau2_e(VectorView& inv_tau2) const
     {
-      size_t m = beta.length();
-
-      double beta2sum[] = {0.0, 0.0, 0.0, 0.0};
-      size_t m_types[] = {0, 0, 0, 0};
-
-      for (size_t i = m_e; i < m; ++i){
-        beta2sum[x_types[i]] += beta(i) * beta(i);
-        ++m_types[x_types[i]];
-      }
-
-      for (size_t t = 0; t < 4; ++t){
-        if (allow_terms[t]){
-          double nu = nu_tau2[t] + m_types[t];
-          double s2 = (nus2_tau2[t] + beta2sum[t] / sigma2) / nu;
-
-          t2_tau2[t] = rng.rand_sinvchi2(nu, s2);
-        }
-      }
+      // no alpha for covariates
+      assert(inv_tau2.length() >= m_e);
+      inv_tau2.block(0, m_e) = inv_tau2_e;
     }
 
-    double do_invQ(SymmMatrixView& xx,
-                   const std::vector<DataModel::ef_t>& x_types) const
+    double sample_single_inv_tau2_from_prior_times_alpha2(const DataModel::ef_t type, Rand& rng) const
     {
-      assert(xx.length() >= m_e);
+      assert(type != DataModel::AH); // type should be term type
+      if (use_individual_tau2)
+        return 1.0 / (alpha2_ * rng.rand_sinvchi2(nu_tau2[type], s2_tau2[type]));
+      else
+        return inv_tau2_alpha2[type];
+    }
 
-      double log_sum_2 = 0;
+    void sample_alpha_and_tau2(Model* model, const VectorView& y, Rand& rng)
+    {
+      /* note: must sample in this order!
+       * This is because alpha_ is used in tau2 sampling to scale beta to eta,
+       * but tau2 sampling should actually depend only on eta (i.e., must use
+       * the same alpha in scaling which was in use when beta was sampled).
+       */
+      sample_tau2(model, rng);
+      set_alpha(sample_alpha(model, y, rng), model);
+    }
 
-      // handle E
-      // assumption: first term is constant
-      xx(0, 0) += inv_tau2_e(0);
+    double log_det_invQ_e() const
+    {
+      double log_sum_2 = 0.0;
       for (size_t i = 1; i < m_e; ++i){
-        xx(i, i) += inv_tau2_e(i);
         log_sum_2 += log(inv_tau2_e(i));
       }
-
-      // G effects
-      double inv_val[] = {1.0 / t2_tau2[0],
-                          1.0 / t2_tau2[1],
-                          1.0 / t2_tau2[2],
-                          1.0 / t2_tau2[3]};
-      for (size_t i = m_e; i < xx.length(); ++i){
-        xx(i, i) += inv_val[x_types[i]];
-        log_sum_2 += log(inv_val[x_types[i]]);
-      }
-      //log_sum_2 += log(inv_val) * (xx.length() - m_e);
-
-      return 0.5 * log_sum_2;
-    }
-
-    double log_pdf_tau2(const DataModel::ef_t type)
-    {
-      return Utils::sinvchi2_lpdf(t2_tau2[type], nu_tau2[type], s2_tau2[type]);
+      return log_sum_2;
     }
 
     void print(std::string filename)
@@ -224,7 +225,8 @@ class Prior
       *f_p << "a_omega = " << g_a << std::endl
            << "b_omega = " << g_b << std::endl
            << "nu_sigma2 = " << nu_sigma2 << std::endl
-           << "s2_sigma2 = " << s2_sigma2 << std::endl;
+           << "s2_sigma2 = " << s2_sigma2 << std::endl
+           << "mu_alpha = " << mu_alpha << std::endl;
       for (size_t t = 0; t < 5; ++t){
         *f_p << "type_" << DataModel::ef_name[t] << " = " << types_prior[t] << " (allowed? "
              << allow_types[t] << ")" << std::endl;
@@ -240,23 +242,33 @@ class Prior
       delete f_p;
     }
 
+    double e_g() const
+    {
+      return g_a / (g_a + g_b) * m_g;
+    }
   private:
-    const size_t m_g, m_e;
+    const size_t n, m_g, m_e;
     const int n_types;
     const double log_n_types;
     double g_a, g_b;
     Vector inv_tau2_e;
     double nu_sigma2, s2_sigma2, nus2_sigma2;
     // note: only four tau2s, since AH splits to A and H...
-    double nu_tau2[4], s2_tau2[4], nus2_tau2[4], t2_tau2[4];
+    double nu_tau2[4], s2_tau2[4], nus2_tau2[4];
+    double alpha_, alpha2_;
+    double inv_tau2_alpha2[4];
     double types_prior[5];
     double types_prior_sum;
     bool allow_types[5];
     bool allow_terms[5];
+    double pve_pow;
 
     // disallow copy constructor and assignment
     Prior(const Prior& prior);
     Prior& operator=(const Prior& prior);
+
+    double sample_alpha(Model* model, const VectorView& y, Rand& rng);
+    void sample_tau2(Model* model, Rand& rng);
 
     void solve_betadist_params(const double e_q, const double var_q)
     {

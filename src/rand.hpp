@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * rand.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -68,8 +68,15 @@ class Rand
        *  2) return nu * s2 / X
        * ref. Gelman et al. 1995
        */
-      return _sinvchi2_nu * s2 / (2.0 * gamma_sampler());
+
+      // gamma_sampler_ may give zero with reasonable input, protect against it
+      double val = -1.0;
+      while (val <= 0 || !std::isfinite(val)){
+        val = _sinvchi2_nu * s2 / (2.0 * gamma_sampler());
+      }
+      return val;
     }
+
     //! Random number from scaled inverse-Chi^2.
     /*!
      *  \param nu Degrees of freedom.
@@ -81,7 +88,12 @@ class Rand
       boost::variate_generator<boost::mt19937&,
           boost::gamma_distribution<double> > gamma_sampler_(rng, gamma_dist_);
 
-      return nu * s2 / (2.0 * gamma_sampler_());
+      // gamma_sampler_ may give zero with reasonable input, protect against it
+      double val = -1.0;
+      while (val <= 0 || !std::isfinite(val)){
+        val = nu * s2 / (2.0 * gamma_sampler_());
+      }
+      return val;
     }
 
     //! Generates a draw from multivariate normal distribution.

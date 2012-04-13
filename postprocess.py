@@ -1,4 +1,4 @@
-# Postprocessing utilities for BMAGWA software
+# Postprocessing utilities for BMAGWA software (v2.0)
 # Author: Tomi Peltola <tomi.peltola@aalto.fi>
 
 import struct, sys, os
@@ -56,20 +56,19 @@ def output(args):
 
 def guess_fmt(filename):
   import re
-  patterns = ((r'accepted\.', 'b'),
+  patterns = ((r'jumpdistance\.', 'B'),
               (r'loci\.', 'I'),
               (r'log_likelihood\.', 'd'),
+              (r'alpha\.', 'd'),
               (r'log_prior\.', 'd'),
               (r'modelsize\.', 'I'),
-              (r'move_type\.', 'b'),
+              (r'move_type\.', 'B'),
+              (r'move_size\.', 'B'),
               (r'pve\.', 'd'),
               (r'rao\.', 'd'),
               (r'rao_types\.', 'd'),
               (r'sigma2\.', 'd'),
-              (r'singlesnp_post\.', 'd'),
-              (r'singlesnp_post_types\.', 'd'),
-              (r'tau2_(A|H|D|R)\.', 'd'),
-              (r'types\.', 'b'))
+              (r'types\.', 'B'))
   for p in patterns:
     if re.search(p[0], filename) != None:
       return p[1]
@@ -81,7 +80,7 @@ def mcmcpos(args):
   nsnps = int(args[1])
   burnin = int(args[2])
   if len(args) >= 4:
-    thin = int(args[3])
+    thin = max(1, int(args[3]))
   else:
     thin = 1
   
@@ -99,7 +98,7 @@ def mcmcpos(args):
     nsamples = 0
     for j,ms in enumerate(read_data(os.path.join(directory, msfile),
                           guess_fmt(msfile))):
-      if j < burnin:
+      if j < burnin or (j - burnin) % thin != 0:
         for x in range(int(ms)): loci.next()
       else:
         nsamples += 1
@@ -170,5 +169,5 @@ if __name__ == "__main__":
     print "python %s convert results/chain1_modelsize.dat" % sys.argv[0]
     print "python %s convert results/chain1_modelsize.dat I" % sys.argv[0]
     print "python %s output results/chain0_rao.dat > rao0.txt" % sys.argv[0]
-    print "python %s mcmcpos results/chain 10000 5000 1" % sys.argv[0]
+    print "python %s mcmcpos results/chain 10000 50000 1" % sys.argv[0]
 

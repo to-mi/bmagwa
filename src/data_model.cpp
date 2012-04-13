@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * data_model.cpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,90 +102,66 @@ void DataModel::sample_missing_single(const uint32_t snp, Rand& rng)
   }
 }
 
-void DataModel::update_xx_a(const size_t snp, SymmMatrixView& xx) const
+void DataModel::update_prexx_cov(const size_t snp, double* pre_xx) const
 {
   if (miss_val_[snp] == NULL) return;
 
-  // update xx
-  // x' * x (upper part is only accessed)
-  for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
-    double val = (double)miss_val_[snp][i];
+  double* xxloc = pre_xx;
+  char* miss_val_snp = miss_val_[snp];
+  char val = 0;
+  double val_g = 0.0, sum_val_g, sum_val_g2, sum_a_times_sum_h = 0.0;
 
-    // constant 1 * x_new (at 0,1) (old value was 0 for missing x_ij!)
-    xx(0, 1) += val;
-    // x_new * x_new (at 1,1)
-    xx(1, 1) += (val * val);
+  if (allow_types(AH)){
+    sum_a_times_sum_h = pre_xx[0] * pre_xx[2];
   }
-}
 
-void DataModel::update_xx_h(const size_t snp, SymmMatrixView& xx) const
-{
-  if (miss_val_[snp] == NULL) return;
+  for (int t = 0; t < 4; ++t){
+    if (!allow_terms((ef_t)t))
+      continue;
 
-  // update xx
-  // x' * x (upper part is only accessed)
-  for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
-    double val = (double)(miss_val_[snp][i] == 1);
+    sum_val_g = 0.0;
+    sum_val_g2 = 0.0;
+    for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
+      val = miss_val_snp[i];
+      switch (types[t]){
+        case A:
+          val_g = (double)val;
+          break;
+        case H:
+          val_g = (double)(val == 1);
+          break;
+        case D:
+          val_g = (double)(val > 0);
+          break;
+        case R:
+          val_g = (double)(val == 2);
+          break;
+        default:
+          throw std::logic_error("type not in A,H,D,R");
+      }
+      sum_val_g += val_g;
+      sum_val_g2 += val_g * val_g;
+    }
+    // update sum (contribution was 0)
+    *xxloc += sum_val_g;
+    xxloc++;
 
-    // constant 1 * x_new (at 0,1) (old value was 0 for missing x_ij!)
-    xx(0, 1) += val;
-    // x_new * x_new (at 1,1)
-    xx(1, 1) += (val * val);
+    // update var
+    //*xxloc += val_g * val_g - (2 * (*xxloc) * val_g + val_g * val_g)/n;
+    *xxloc += sum_val_g2 - sum_val_g * ((*xxloc) * 2.0 + sum_val_g) / (double)n;
+    xxloc++;
   }
-}
+  if (allow_types(AH)){
+    *xxloc += (sum_a_times_sum_h - pre_xx[0] * pre_xx[2]) / (double)n;
+    for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
+      val = miss_val_snp[i];
 
-void DataModel::update_xx_d(const size_t snp, SymmMatrixView& xx) const
-{
-  if (miss_val_[snp] == NULL) return;
-
-  // update xx
-  // x' * x (upper part is only accessed)
-  for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
-    double val = (double)(miss_val_[snp][i] > 0);
-
-    // constant 1 * x_new (at 0,1) (old value was 0 for missing x_ij!)
-    xx(0, 1) += val;
-    // x_new * x_new (at 1,1)
-    xx(1, 1) += (val * val);
-  }
-}
-
-void DataModel::update_xx_r(const size_t snp, SymmMatrixView& xx) const
-{
-  if (miss_val_[snp] == NULL) return;
-
-  // update xx
-  // x' * x (upper part is only accessed)
-  for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
-    double val = (double)(miss_val_[snp][i] == 2);
-
-    // constant 1 * x_new (at 0,1) (old value was 0 for missing x_ij!)
-    xx(0, 1) += val;
-    // x_new * x_new (at 1,1)
-    xx(1, 1) += (val * val);
-  }
-}
-
-void DataModel::update_xx_ah(const size_t snp, SymmMatrixView& xx) const
-{
-  if (miss_val_[snp] == NULL) return;
-
-  // update xx
-  // x' * x (upper part is only accessed)
-  for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
-    double val_a = (double)miss_val_[snp][i];
-    double val_h = (double)(val_a == 1.0);
-
-    // constant * additive at 1,2
-    xx(0, 1) += val_a;
-    // additive * additive at 2,2
-    xx(1, 1) += (val_a * val_a);
-    // constant * heterozygosity at 1,3
-    xx(0, 2) += val_h;
-    // additive * heterozygosity at 2,3
-    xx(1, 2) += (val_a * val_h);
-    // heterozygosity * heterozygosity at 3,3
-    xx(2, 2) += (val_h * val_h);
+      // addition: val * (val == 1)
+      if (val == 1){
+        *xxloc += (double)val;
+      }
+    }
+    // this is last, no need to xxloc++
   }
 }
 

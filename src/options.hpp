@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * options.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +27,6 @@
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
-//#include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 #include "inih/cpp/INIReader.h"
@@ -36,6 +35,7 @@
 
 namespace bmagwa {
 
+//! Options file parser
 class Options
 {
   public:
@@ -46,9 +46,15 @@ class Options
     std::string types_str;
     std::vector<DataModel::ef_t> types;
 
+    char sampler_type;
     size_t do_n_iter, n_rao, n_rao_burnin, thin, n_sample_tau2_and_missing;
-    double t_proposal;
-    bool adaptation, save_beta;
+    size_t max_move_size, max_SNP_neighborhood_size;
+    double p_move_size;
+    double p_move_size_nbs;
+    double p_move_size_nbc;
+    bool adapt_p_move_size;
+    double p_move_size_acpt_goal;
+    bool flat_proposal_dist, adaptation, save_beta;
     size_t verbosity;
 
     std::string basename;
@@ -58,10 +64,13 @@ class Options
 
     double e_qg, var_qg;
     double nu_sigma2, s2_sigma2, R2mode_sigma2;
-    double nu_tau2[4], s2_tau2[4], eh_tau2[4];
+    double nu_tau2[4], s2_tau2[4], eh_tau2[4], mu_alpha;
     double inv_tau2_e_const_val, inv_tau2_e_val;
     Vector* inv_tau2_e;
     double types_prior[5];
+    bool use_individual_tau2;
+
+    size_t delay_rejection;
 
 
     // constructors and destructors
@@ -92,10 +101,20 @@ class Options
     Options(const Options& opt, size_t index)
     : file_fam(opt.file_fam), file_g(opt.file_g), file_e(opt.file_e),
       file_y(opt.file_y), n(opt.n), m_g(opt.m_g), m_e(opt.m_e),
-      types(opt.types), do_n_iter(opt.do_n_iter), n_rao(opt.n_rao),
+      types(opt.types),
+      sampler_type(opt.sampler_type),
+      do_n_iter(opt.do_n_iter), n_rao(opt.n_rao),
       n_rao_burnin(opt.n_rao_burnin), thin(opt.thin),
       n_sample_tau2_and_missing(opt.n_sample_tau2_and_missing),
-      t_proposal(opt.t_proposal), adaptation(opt.adaptation),
+      max_move_size(opt.max_move_size),
+      max_SNP_neighborhood_size(opt.max_SNP_neighborhood_size),
+      p_move_size(opt.p_move_size),
+      p_move_size_nbs(opt.p_move_size_nbs),
+      p_move_size_nbc(opt.p_move_size_nbc),
+      adapt_p_move_size(opt.adapt_p_move_size),
+      p_move_size_acpt_goal(opt.p_move_size_acpt_goal),
+      flat_proposal_dist(opt.flat_proposal_dist),
+      adaptation(opt.adaptation),
       save_beta(opt.save_beta), verbosity(opt.verbosity),
       basename(opt.basename + boost::lexical_cast<std::string>(index)),
       n_threads(opt.n_threads), seeds(opt.seeds),
@@ -103,8 +122,11 @@ class Options
       e_qg(opt.e_qg), var_qg(opt.var_qg), nu_sigma2(opt.nu_sigma2),
       s2_sigma2(opt.s2_sigma2),
       R2mode_sigma2(opt.R2mode_sigma2),
+      mu_alpha(opt.mu_alpha),
       inv_tau2_e_const_val(opt.inv_tau2_e_const_val),
-      inv_tau2_e_val(opt.inv_tau2_e_val)
+      inv_tau2_e_val(opt.inv_tau2_e_val),
+      use_individual_tau2(opt.use_individual_tau2),
+      delay_rejection(opt.delay_rejection)
     {
       inv_tau2_e = new Vector(*(opt.inv_tau2_e));
       memcpy(types_prior, opt.types_prior, 5 * sizeof(double));
@@ -131,6 +153,7 @@ class Options
 
       types_str = parse_string(r, "model", "types", false, "");
 
+      std::string sampler_type_str = parse_string(r, "sampler", "type", true, "PMV");
       do_n_iter = parse_integer_pos(r, "sampler", "do_n_iter", false, 0);
       n_rao = parse_integer_nonneg(r, "sampler", "n_rao", false, 0);
       n_rao_burnin =
@@ -138,10 +161,29 @@ class Options
       thin = parse_integer_pos(r, "sampler", "thin", false, 0);
       n_sample_tau2_and_missing =
     	 parse_integer_pos(r, "sampler", "n_sample_tau2_and_missing", false, 0);
-      t_proposal = parse_double_01(r, "sampler", "t_proposal", false, 0.0);
+      max_move_size = parse_integer_pos(r, "sampler", "max_move_size", true, 20);
+      max_SNP_neighborhood_size = parse_integer_pos(r, "sampler",
+                                     "max_SNP_neighborhood_size", true, 10);
+      p_move_size = parse_double_pos(r, "sampler", "p_move_size", true, 0.2);
+      if (p_move_size > 1)
+        throw std::runtime_error("Config error: p_move_size must be <= 1.");
+      p_move_size_nbs = parse_double_pos(r, "sampler", "p_move_size_nbs", true, 0.2);
+      if (p_move_size_nbs > 1)
+        throw std::runtime_error("Config error: p_move_size_nbs must be <= 1.");
+      p_move_size_nbc = parse_double_pos(r, "sampler", "p_move_size_nbc", true, 0.2);
+      if (p_move_size_nbc > 1)
+        throw std::runtime_error("Config error: p_move_size_nbc must be <= 1.");
+      adapt_p_move_size = parse_bool(r, "sampler", "adapt_p_move_size", true, 1);
+      p_move_size_acpt_goal = parse_double_nonneg(r, "sampler",
+                                            "p_move_size_acpt_goal", true, 0.0);
+      if (p_move_size_acpt_goal > 1)
+        throw std::runtime_error(
+                     "Config error: p_move_size_acpt_goal must be <= 1.");
       adaptation = parse_bool(r, "sampler", "adaptation", true, 0);
+      flat_proposal_dist = parse_bool(r, "sampler", "flat_proposal_dist", true, 0);
       save_beta = parse_bool(r, "sampler", "save_beta", true, 0);
       verbosity = parse_integer_nonneg(r, "sampler", "verbosity", false, 0);
+      delay_rejection = parse_integer_nonneg(r, "sampler", "delay_rejection", true, 0);
 
       basename = parse_string(r, "thread", "basename", true, "chain");
       n_threads = parse_integer_pos(r, "thread", "n_threads", true, 1);
@@ -156,6 +198,7 @@ class Options
         throw std::runtime_error(
             "Config error: s2_sigma2 or R2mode_sigma2 must be > 0.");
 
+      mu_alpha = parse_double(r, "prior", "mu_alpha", true, 0.0);
 
       inv_tau2_e_const_val = parse_double_nonneg(r, "prior",
     		                                     "inv_tau2_e_const_val", false,
@@ -164,8 +207,10 @@ class Options
         inv_tau2_e_val = parse_double_nonneg(r, "prior", "inv_tau2_e_val", false,
         		                             0.0);
       else
-    	inv_tau2_e_val = parse_double_nonneg(r, "prior", "inv_tau2_e_val", true,
+        inv_tau2_e_val = parse_double_nonneg(r, "prior", "inv_tau2_e_val", true,
     			                             0.0);
+
+      use_individual_tau2 = parse_bool(r, "prior", "use_individual_tau2", true, 0);
 
       types_prior[DataModel::A] = parse_double(r, "prior", "type_A", true, 1.0);
       types_prior[DataModel::H] = parse_double(r, "prior", "type_H", true, 1.0);
@@ -173,6 +218,13 @@ class Options
       types_prior[DataModel::D] = parse_double(r, "prior", "type_D", true, 1.0);
       types_prior[DataModel::AH] = parse_double(r, "prior", "type_AH", true,
     		                                    1.0);
+
+      // check sampler type
+      if (sampler_type_str == "PMV") sampler_type = 0;
+      else if (sampler_type_str == "NK") sampler_type = 1;
+      else if (sampler_type_str == "KSC") sampler_type = 2;
+      else if (sampler_type_str == "G") sampler_type = 3;
+      else throw std::runtime_error("Config error: unknown sampler type");
 
       // additional checks
       if (n_rao % thin != 0)
@@ -202,6 +254,9 @@ class Options
       std::sort(types.begin(), types.end());
       if (types.empty())
         throw std::runtime_error("Config error: Types cannot be empty");
+
+      if (sampler_type != 0 && (types.size() != 1 || types[0] != DataModel::A))
+        throw std::runtime_error("Config error: NK/KSC/G samplers support only A effect types");
 
       if (std::find(types.begin(), types.end(), DataModel::A) != types.end() ||
           std::find(types.begin(), types.end(), DataModel::AH) != types.end()){
@@ -273,7 +328,8 @@ class Options
       std::string res(reader.Get(section, name, "DEFAULT_VALUE"));
       bool no_value = (res.empty() || res == "DEFAULT_VALUE");
       if (no_value && !allow_default)
-    	throw std::runtime_error("Cannot leave option empty.");
+    	throw std::runtime_error("Cannot leave option empty: " + section + "."
+    	                         + name);
       if (no_value){
     	  std::cout << "Warning: using default value of " << default_value
     	            << " for option " << section << "." << name << std::endl;
@@ -289,7 +345,8 @@ class Options
       std::string res(reader.Get(section, name, "DEFAULT_VALUE"));
       bool no_value = (res.empty() || res == "DEFAULT_VALUE");
       if (no_value && !allow_default)
-        throw std::runtime_error("Cannot leave option empty.");
+        throw std::runtime_error("Cannot leave option empty: " + section + "."
+                                 + name);
       if (no_value){
         std::cout << "Warning: using default value of " << default_value
                   << " for option " << section << "." << name << std::endl;
@@ -340,7 +397,8 @@ class Options
       std::string res(reader.Get(section, name, "DEFAULT_VALUE"));
       bool no_value = (res.empty() || res == "DEFAULT_VALUE");
       if (no_value && !allow_default)
-        throw std::runtime_error("Cannot leave option empty.");
+        throw std::runtime_error("Cannot leave option empty: "
+                                 + section + "." + name);
       if (no_value){
         std::cout << "Warning: using default value of " << default_value
                   << " for option " << section << "." << name << std::endl;

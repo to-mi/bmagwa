@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * data.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,8 +29,12 @@
 
 namespace bmagwa {
 
-// Data needs to be thread-safe
-// (achieved via being read-only after construction)
+//! Loads and holds the genotype, covariate and phenotype data.
+/*!
+ *  Should be used as read-only after initialization in order for different
+ *  threads of independent samplers to be able to share the same dataset. For
+ *  this reason DataModel handles missing data.
+ */
 class Data
 {
   public:

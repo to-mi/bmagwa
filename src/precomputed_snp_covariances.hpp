@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * precomputed_snp_covariances.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,122 +31,101 @@ namespace bmagwa {
 // forward declaration
 class RaoBlackwellizer;
 
+//! Precomputes and holds SNP (co)variances for use in RB regression.
+/*!
+ *  Computes and holds the (co)variances required in RB regression. That is,
+ *  no cross-covariances between different SNPs are computed. Note, the pre-
+ *  computation needs to be done at a stage where all missing data is set to
+ *  zeros, so that DataModel.update_prexx_cov can be used to account for the
+ *  current sampled values for the missing data.
+ */
 class PrecomputedSNPCovariances
 {
   public:
-	PrecomputedSNPCovariances(const DataModel* data_model)
-	{
-	  const size_t m_g = data_model->m_g;
+    //! Length of the elements for single SNP
+    const int offset;
+    //! Offsets for effect term types in the order of DataModel::ef_t (only allowed terms)
+    int offset_type[4];
+    //! The precomputed values
+    /*!
+     *  Elements for jth SNP begin at j * offset. Offset for tth type is added
+     *  to this (e.g., j * offset + offset_type[t]). For A,H,D,R values include
+     *  n * sample mean and unnormalized sample variance. Unnormalized
+     *  covariance between A and H is included if AH is allowed.
+     */
+    double* xx;         // in order of data_model->types
 
-	  // allocate xx and xx_types
-	  for (size_t i = 0; i < 5; ++i) xx_types[i] = NULL;
-	  xx = new double*[data_model->n_types];
+    PrecomputedSNPCovariances(const DataModel* data_model)
+    : offset(2 * data_model->n_types +
+             // if AH, then space for the crossterm and possibly A or H is needed
+             //        if they are not allowed individually. note that AH is counted
+             //        in n_types!
+             (data_model->allow_types(DataModel::AH) ? 1 : 0)     // if AH
+             * (1 +                                               // cross term
+                (data_model->allow_types(DataModel::A) &&         // if both -2
+                 data_model->allow_types(DataModel::H)     ? -2 : 0) +
+                (data_model->allow_types(DataModel::A) ||         // if neither +2
+                 data_model->allow_types(DataModel::H)     ? 0 : 2))),
+      xx(NULL)
+    {
+      const size_t m_g = data_model->m_g;
 
-	  if (data_model->allow_types(DataModel::AH)){
-	    size_t j = 0;
-	    xx[j] = new double[m_g * 3 * 3];
-	    xx_offset[DataModel::AH] = 3;
-	    xx_types[DataModel::AH] = xx[j];
+      xx = new double[m_g * offset];
 
-	    if (data_model->allow_types(DataModel::A)){
-	      // allocated xx for A and AH
-	      xx_offset[DataModel::A] = 3;
-	      xx_types[DataModel::A] = xx[j];
-	    }
+      int i = 0;
+      for (int j = 0; j < 4; ++j){
+        if (data_model->allow_terms((DataModel::ef_t)j)){
+          offset_type[j] = i;
+          ++i;
+        } else {
+          offset_type[j] = -1;
+        }
+      }
 
-	    // allocate for others (skipping first and last; these should be A and AH, respectively as !)
-	    j = 1;
-	    for (size_t i = 1; i < 4; ++i){
-	      if (!(data_model->allow_types((DataModel::ef_t)i))) continue;
-	      xx[j] = new double[m_g * 2 * 2];
-	      xx_offset[i] = 2;
-	      xx_types[i] = xx[j];
-	      ++j;
-	    }
-	  } else {
-	    size_t j = 0;
-	    for (size_t i = 0; i < 4; ++i){
-	      if (!(data_model->allow_types((DataModel::ef_t)i))) continue;
-	      xx[j] = new double[m_g * 2 * 2];
-	      xx_offset[i] = 2;
-	      xx_types[i] = xx[j];
-	      ++j;
-	    }
-	  }
-
-	  // precompute
-	  precompute(data_model);
-	}
+      // precompute
+      precompute(data_model);
+    }
 
 
     ~PrecomputedSNPCovariances()
     {
-      if (xx != NULL){
-        for (size_t i = 0; i < 5; ++i){
-          // use last xx_types pointer only to free memory
-          for (size_t j = i + 1; j < 5; ++j){
-            if (xx_types[i] == xx_types[j]) xx_types[i] = NULL;
-          }
-          delete[] xx_types[i];
-        }
-        delete[] xx;
-      }
+      delete[] xx;
     }
   private:
-    double **xx;         // in order of data_model->types
-    double *xx_types[5]; // in order of ef_t enum
-    size_t xx_offset[5]; // in order of ef_t enum
-
     void precompute(const DataModel* data_model)
     {
       size_t n = data_model->n;
 
-      Matrix x(n, 2 + data_model->allow_types(DataModel::AH));
-      x = 1;
+      Vector x(n);
+      x = 0;
+      Vector xAH(n);
+      xAH = 0;
 
-      if (data_model->allow_types(DataModel::AH)){
-        for (size_t i = 0; i < data_model->m_g; ++i){
-          size_t j = 0;
-          {
-            // AH first
-            x.resize(n, 3);
+      double* xxloc = xx;
 
-            data_model->get_genotypes_additive(i, x.column(1));
-            data_model->get_genotypes_heterozygous(i, x.column(2));
+      for (size_t i = 0; i < data_model->m_g; ++i){
+        assert(xxloc == xx + i * offset);
+        for (int t = 0; t < 4; ++t){
+          DataModel::ef_t type = (DataModel::ef_t)t;
+          if (!data_model->allow_terms(type))
+            continue;
 
-
-            SymmMatrixView tmp_xx(xx[j] + i * 9, 3);
-            tmp_xx.set_to_innerproduct(x);
-          }
-
-          // then others (skipping A)
-          x.resize(n, 2);
-          j = 1;
-          for (size_t k = 1; k < 4; ++k){
-            if (!(data_model->allow_types((DataModel::ef_t)k))) continue;
-
-            (data_model->*data_model->bmagwa::DataModel::get_genotypes[k])(i,
-            		                                               x.column(1));
-
-            SymmMatrixView tmp_xx(xx[j] + i * 4, 2);
-            tmp_xx.set_to_innerproduct(x);
-
-            ++j;
-          }
+          (data_model->*data_model->bmagwa::DataModel::get_genotypes[type])(i, x);
+          double xsum = x.sum();
+          *xxloc = xsum;
+          ++xxloc;
+          *xxloc = Vector::dotproduct(x, x) - xsum * xsum / (double)n;
+          ++xxloc;
         }
-      } else {
-        for (size_t i = 0; i < data_model->m_g; ++i){
-          size_t j = 0;
-          for (size_t k = 0; k < 4; ++k){
-            if (!data_model->allow_types((DataModel::ef_t)k)) continue;
-            (data_model->*data_model->bmagwa::DataModel::get_genotypes[k])(i,
-                                                                   x.column(1));
+        if (data_model->allow_types(DataModel::AH)){
+          (data_model->*data_model->bmagwa::DataModel::get_genotypes[DataModel::A])(i, x);
+          (data_model->*data_model->bmagwa::DataModel::get_genotypes[DataModel::H])(i, xAH);
 
-            SymmMatrixView tmp_xx(xx[j] + i * 4, 2);
-            tmp_xx.set_to_innerproduct(x);
+          double asum = x.sum();
+          double hsum = xAH.sum();
 
-            ++j;
-          }
+          *xxloc = Vector::dotproduct(x, xAH) - asum * hsum / (double)n;
+          ++xxloc;
         }
       }
     }

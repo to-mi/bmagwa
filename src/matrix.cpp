@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * matrix.cpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,8 +21,20 @@
 
 
 #include "matrix.hpp"
+#include "symmmatrix.hpp"
 
 namespace bmagwa {
+
+MatrixView::MatrixView(const SymmMatrixView &m, size_t col)
+: data_(m.data() + m.stride() * col),
+  rows_(col),
+  cols_(m.length() - col),
+  rows_mem_(m.length_mem()),
+  cols_mem_(m.length_mem() - col),
+  stride_(m.stride())
+{
+  assert(col > 0 && cols_mem_ > 0);
+}
 
 MatrixView& MatrixView::operator=(const MatrixView &m)
 {
@@ -33,6 +45,16 @@ MatrixView& MatrixView::operator=(const MatrixView &m)
       for (size_t r = 0; r < rows_; ++r)
         data_[r + offset] = m.data_[r + offset];
     }
+  }
+  return *this;
+}
+
+MatrixView& MatrixView::operator*=(const double val)
+{
+  for (size_t c = 0; c < cols_; ++c) {
+    size_t offset = c * stride();
+    for (size_t r = 0; r < rows_; ++r)
+      data_[r + offset] *= val;
   }
   return *this;
 }
@@ -48,8 +70,10 @@ void MatrixView::set_to(const double val)
 
 void MatrixView::set_mem_to(const double val)
 {
-  for (size_t i = 0; i < cols_mem_ * rows_mem_; ++i) {
-    data_[i] = val;
+  for (size_t c = 0; c < cols_mem_; ++c) {
+    size_t offset = c * stride();
+    for (size_t r = 0; r < rows_mem_; ++r)
+      data_[r + offset] = val;
   }
 }
 
@@ -69,11 +93,11 @@ Matrix& Matrix::operator=(const Matrix& m)
 Matrix& Matrix::operator=(const MatrixView& m)
 {
   if (this != &m){
-    assert(rows_ == m.rows_ && cols_ == m.cols_);
+    assert(rows_ == m.rows() && cols_ == m.cols());
     for (size_t c = 0; c < cols_; ++c) {
       size_t offset = c * stride();
       for (size_t r = 0; r < rows_; ++r)
-        data_[r + offset] = m.data_[r + offset];
+        data_[r + offset] = m.data()[r + offset];
     }
   }
   return *this;

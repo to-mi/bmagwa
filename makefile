@@ -6,10 +6,10 @@ CC=gcc
 CFLAGS=-O0 -Wall -c
 FC=gcc
 FCFLAGS=-m64 -c
-LDFLAGS=-lblas -llapack -lpthread -lgfortran
+LDFLAGS=-lblas -llapack -lpthread -lgfortran -lrt
 
 
-CXXSOURCES=src/data.cpp src/data_model.cpp src/main.cpp src/matrix.cpp src/model.cpp src/sampler.cpp src/symmmatrix.cpp src/utils.cpp src/vector.cpp src/inih/cpp/INIReader.cpp
+CXXSOURCES=src/data.cpp src/data_model.cpp src/main.cpp src/matrix.cpp src/model.cpp src/prior.cpp src/sampler.cpp src/symmmatrix.cpp src/utils.cpp src/vector.cpp src/inih/cpp/INIReader.cpp
 CSOURCES=src/inih/ini.c
 OBJECTS=$(CXXSOURCES:.cpp=.cpp.o) $(CSOURCES:.c=.c.o) src/dchex.f.o
 EXECUTABLE=bmagwa

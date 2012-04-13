@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * data_model.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,11 @@
 
 namespace bmagwa {
 
+//! Provides means to fetch genotypes from Data while handling missing data.
+/*!
+ *  Each independent sampler thread should have an individual DataModel
+ *  instance as the state of missing values is stored here.
+ */
 class DataModel
 {
   public:
@@ -36,16 +41,12 @@ class DataModel
     enum ef_t {A = 0, H = 1, D = 2, R = 3, AH = 4}; // effect type
     static const char* ef_name[];
 
-    typedef void (DataModel::*get_genotypes_fp)(const size_t snp, VectorView v)
-    		                                                                  const;
-    typedef void (DataModel::*update_xx_fp)(const size_t snp,
-                                            SymmMatrixView& xx) const;
+    typedef void (DataModel::*get_genotypes_fp)(const size_t snp, VectorView v) const;
 
     // member variables
     const size_t n, m_g, m_e, n_types;
     const std::vector<ef_t> types;
     get_genotypes_fp get_genotypes[4];
-    update_xx_fp update_xx[5];
 
     // constructors and destructors
     DataModel(const Data* data, const std::vector<ef_t> _types)
@@ -56,12 +57,6 @@ class DataModel
       get_genotypes[H] = &DataModel::get_genotypes_heterozygous;
       get_genotypes[D] = &DataModel::get_genotypes_dominant;
       get_genotypes[R] = &DataModel::get_genotypes_recessive;
-
-      update_xx[A] = &DataModel::update_xx_a;
-      update_xx[H] = &DataModel::update_xx_h;
-      update_xx[D] = &DataModel::update_xx_d;
-      update_xx[R] = &DataModel::update_xx_r;
-      update_xx[AH] = &DataModel::update_xx_ah;
 
       for (size_t i = 0; i < 5; ++i){
         allow_types_[i] = false;
@@ -129,17 +124,13 @@ class DataModel
     void get_genotypes_recessive(const size_t snp, VectorView v) const;
 
     /*
-     * These are for updating the precomputed snp-wise covariance matrices.
+     * This is for updating the precomputed snp-wise covariance matrices.
      * Note: Only a local copy of xx should be updated, not the actual
      *       precomputed xx.
      *       This is because the updates assume that missing values were set to
      *       0 (and if they are not, the updates produce nonsense).
      */
-    void update_xx_a(const size_t snp, SymmMatrixView& xx) const;
-    void update_xx_h(const size_t snp, SymmMatrixView& xx) const;
-    void update_xx_d(const size_t snp, SymmMatrixView& xx) const;
-    void update_xx_r(const size_t snp, SymmMatrixView& xx) const;
-    void update_xx_ah(const size_t snp, SymmMatrixView& xx) const;
+    void update_prexx_cov(const size_t snp, double* pre_xx) const;
 
     /*
      * These update miss_val (either for all SNPs with model_inds[snp] < 0 or

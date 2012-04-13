@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * symmmatrix.hpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,24 +52,39 @@ class MatrixView;
  *  assumes memory layout for full square matrix (and may access/modify the
  *  lower triangle also).
  *
- *  SymmMatrix provides memory allocation.
+ *  Does not do bounds checking!
+ *  Mostly a simple wrapper to BLAS and LAPACK operations.
+ *
+ *  Subclass SymmMatrix provides memory allocation.
  */
 class SymmMatrixView
 {
   public:
     // constructors and destructors
     SymmMatrixView(double *data, const size_t length_mem)
-    : data_(data), length_(length_mem), length_mem_(length_mem)
+    : data_(data), length_(length_mem), length_mem_(length_mem),
+      stride_(length_mem)
     {}
 
-    SymmMatrixView(double *data, const size_t length_mem,
-                      const size_t length)
-    : data_(data), length_(length), length_mem_(length_mem)
+    SymmMatrixView(double *data, const size_t length_mem, const size_t length)
+    : data_(data), length_(length), length_mem_(length_mem), stride_(length_mem)
     {}
 
     SymmMatrixView(const SymmMatrixView &m)
-    : data_(m.data_), length_(m.length_), length_mem_(m.length_mem_)
+    : data_(m.data_), length_(m.length_), length_mem_(m.length_mem_),
+      stride_(m.stride())
     {}
+
+    SymmMatrixView(const SymmMatrixView &m, const size_t index,
+                   const size_t length)
+    : data_(m.data_ + m.stride() * index + index),
+      length_(length),
+      length_mem_(m.length_mem() - index),
+      stride_(m.stride())
+    {
+      assert(length_mem_ >= 0);
+      assert(length_ <= length_mem_);
+    }
 
     virtual ~SymmMatrixView() {}
 
@@ -92,14 +107,18 @@ class SymmMatrixView
       set_to(val);
       return *this;
     }
+    SymmMatrixView& operator*=(const double val);
 
     // getters and setters
     double* data() { return data_; }
-    const size_t& length() const { return length_; }
-    const size_t& rows() const { return length(); }
-    const size_t& cols() const { return length(); }
-    const size_t& stride() const { return length_mem_; }
+    double* data() const { return data_; }
+    const size_t length() const { return length_; }
+    const size_t length_mem() const { return length_mem_; }
+    const size_t rows() const { return length(); }
+    const size_t cols() const { return length(); }
+    const size_t stride() const { return stride_; }
     VectorView column(const size_t col);
+    VectorView column(const size_t col, const size_t length);
     void resize(const size_t length)
     {
       if (length <= length_mem_) {
@@ -138,11 +157,7 @@ class SymmMatrixView
 
   protected:
     double* data_;
-    size_t length_, length_mem_;
-
-  private:
-    friend class VectorView;
-    friend class SymmMatrix;
+    size_t length_, length_mem_, stride_;
 };
 
 //! Symmetric or upper triangular matrix which owns its elements.
@@ -178,13 +193,13 @@ class SymmMatrix : public SymmMatrixView
 
 
     SymmMatrix(const SymmMatrixView &m)
-    : SymmMatrixView(NULL, m.length_mem_, m.length_)
+    : SymmMatrixView(NULL, m.length_mem(), m.length())
     {
       init();
       for (size_t c = 0; c < length_; ++c) {
         size_t offset = c * stride();
         for (size_t r = 0; r <= c; ++r)
-          data_[r + offset] = m.data_[r + offset];
+          data_[r + offset] = m.data()[r + offset];
       }
     }
 
@@ -209,6 +224,8 @@ class SymmMatrix : public SymmMatrixView
     //! Does a copy of the values (requires equal sized matrices).
     SymmMatrix& operator=(const SymmMatrixView& m);
 
+    const double* data() const { return data_; }
+
     //! Removes a column and row from the matrix
     void remove_colrow(const size_t col_rem);
 
@@ -228,12 +245,24 @@ class SymmMatrix : public SymmMatrixView
      */
     void cholesky_downdate(const size_t col_rem, double* c_tmp, double* s_tmp);
 
+    void swap_colrow(const size_t colrow);
+
+    //! Swaps adjacent rows/cols in Cholesky factorization
+    /*!
+     *  Swap variables with indices col and col+1.
+     *
+     *  Optionally update a vector v also (e.g., when v = U'^-1 X y, where U
+     *  is the upper triangular Cholesky factor which is updated here).
+     */
+    void cholesky_swapadj(const size_t col, VectorView* v = NULL);
+
 
   private:
     void init()
     {
 #ifdef N_ALIGN
       length_mem_ = (size_t)ceil(((double)length_mem_) / N_ALIGN) * N_ALIGN;
+      stride_ = length_mem_;
       int res = posix_memalign((void **)&data_, N_ALIGN,
                                 length_mem_ * length_mem_ * sizeof(double));
       if (res != 0) throw std::bad_alloc();

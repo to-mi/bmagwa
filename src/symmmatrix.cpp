@@ -1,9 +1,9 @@
-/* BMAGWA software v1.0
+/* BMAGWA software v2.0
  *
  * symmmatrix.cpp
  *
- * http://www.lce.hut.fi/research/mm/bmagwa/
- * Copyright 2011 Tomi Peltola <tomi.peltola@aalto.fi>
+ * http://becs.aalto.fi/en/research/bayes/bmagwa/
+ * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,10 +39,26 @@ SymmMatrixView& SymmMatrixView::operator=(const SymmMatrixView &m)
   return *this;
 }
 
+SymmMatrixView& SymmMatrixView::operator*=(const double val)
+{
+  for (size_t c = 0; c < length_; ++c) {
+    size_t offset = c * stride();
+    for (size_t r = 0; r <= c; ++r)
+      data_[r + offset] *= val;
+  }
+  return *this;
+}
+
 VectorView SymmMatrixView::column(const size_t col)
 {
   assert(col < length());
   return VectorView(data_ + col * stride(), length_mem_, length_);
+}
+
+VectorView SymmMatrixView::column(const size_t col, const size_t len)
+{
+  assert(col < length());
+  return VectorView(data_ + col * stride(), length_mem_, len);
 }
 
 
@@ -57,8 +73,10 @@ void SymmMatrixView::set_to(const double val)
 
 void SymmMatrixView::set_mem_to(const double val)
 {
-  for (size_t i = 0; i < length_mem_ * length_mem_; ++i) {
-    data_[i] = val;
+  for (size_t c = 0; c < length_mem_; ++c) {
+    size_t offset = c * stride();
+    for (size_t r = 0; r < length_mem_; ++r)
+      data_[r + offset] = val;
   }
 }
 
@@ -75,7 +93,7 @@ void SymmMatrixView::set_to_innerproduct(const MatrixView &m)
 {
   assert(length() == m.cols());
   cblas_dsyrk(CblasColMajor, CblasUpper, CblasTrans, length(), m.rows(),
-              1.0, m.data_, m.stride(), 0.0, data_, stride());
+              1.0, m.data(), m.stride(), 0.0, data_, stride());
 }
 
 
@@ -95,11 +113,11 @@ SymmMatrix& SymmMatrix::operator=(const SymmMatrix& m)
 SymmMatrix& SymmMatrix::operator=(const SymmMatrixView& m)
 {
   if (this != &m){
-    assert(length_ == m.length_);
+    assert(length_ == m.length());
     for (size_t c = 0; c < length_; ++c) {
       size_t offset = c * stride();
       for (size_t r = 0; r <= c; ++r)
-        data_[r + offset] = m.data_[r + offset];
+        data_[r + offset] = m.data()[r + offset];
     }
   }
   return *this;
@@ -124,7 +142,7 @@ void SymmMatrix::remove_colrow(const size_t col_rem)
 }
 
 bool SymmMatrix::cholesky_update(const VectorView& newcol,
-                                     const double inv_tau2_value)
+                                 const double inv_tau2_value)
 {
   size_t col = length();
   assert(col + 1 == newcol.length());
@@ -173,6 +191,76 @@ void SymmMatrix::cholesky_downdate(const size_t col_rem,
         (*this)(i, j) *= -1;
       }
     }
+  }
+}
+
+void SymmMatrix::swap_colrow(const size_t colrow)
+{
+  // columns
+  double* colrow1 = data_ + colrow * stride();
+  double* colrow2 = colrow1 + stride();
+  for (size_t i = 0; i < colrow; ++i){
+    std::swap(*colrow1++, *colrow2++);
+  }
+
+  // diagonals
+  ++colrow2;
+  std::swap(*colrow1, *colrow2);
+
+  // rows
+  colrow1 = data_ + (colrow + 2) * stride() + colrow;
+  colrow2 = colrow1 + 1;
+  for (size_t i = colrow+2; i < length(); ++i){
+    std::swap(*colrow1, *colrow2);
+    colrow1 += stride();
+    colrow2 = colrow1 + 1;
+  }
+}
+
+void SymmMatrix::cholesky_swapadj(const size_t col, VectorView* v)
+{
+  // swap cols
+  double* col1 = data_ + col * stride();
+  double* col2 = col1 + stride();
+  for (size_t i = 0; i < col+2; ++i){
+    std::swap(*col1++, *col2++);
+  }
+  *(--col2) = 0.0; // make sure that this is zero
+
+  // set these to the two last elements in the first column
+  col1 = data_ + col * stride() + col;
+  col2 = col1 + 1;
+
+  // get rotation
+  double c;
+  double s;
+  cblas_drotg(col1, col2, &c, &s);
+  if (*col1 < 0){
+    *col1 *= -1.0;
+    s *= -1.0;
+    c *= -1.0;
+  }
+  //*col2 = 0.0;
+
+  // rotate
+  double tmp;
+  for (size_t i = col + 1; i < length(); ++i){
+    col1 += stride();
+    col2 = col1 + 1;
+
+    tmp = *col1 * s - *col2 * c;
+    *col1 = *col2 * s + *col1 * c;
+    *col2 = tmp;
+  }
+
+  // rotate v also
+  if (v != NULL){
+    col1 = &(*v)(col);
+    col2 = &(*v)(col+1);
+
+    tmp = *col1 * s - *col2 * c;
+    *col1 = *col2 * s + *col1 * c;
+    *col2 = tmp;
   }
 }
 
