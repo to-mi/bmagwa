@@ -25,7 +25,7 @@ binary executables at the moment, but if you need one, send me an e-mail.
 
 The software has been developed (and tested) on 64bit Linux.
 
-  [homepage]:            http://www.lce.hut.fi/research/mm/bmagwa/
+  [homepage]:            http://becs.aalto.fi/en/research/bayes/bmagwa/
   [GitHub repositories]: https://github.com/to-mi
 
 
@@ -378,7 +378,7 @@ Contact
 -------
 
  * E-mail: tomi.peltola at aalto.fi
- * WWW: [http://www.lce.hut.fi/research/mm/bmagwa/][homepage]
+ * WWW: [http://becs.aalto.fi/en/research/bayes/bmagwa/][homepage]
  * GitHub: [https://github.com/to-mi][GitHub repositories]
 
 Acknowledgements: The software uses [inih][], [Boost][], [BLAS][], [LAPACK][]
