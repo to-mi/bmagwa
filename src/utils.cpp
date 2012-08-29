@@ -48,7 +48,7 @@ int sample_discrete_naive(const double *cumsum, const int m, Rand &rng){
   double r = rng.rand_01() * z;
 
   for (int i = 0; i < m; ++i){
-    if (r <= cumsum[i]){
+    if (r < cumsum[i]){
       return i;
     }
   }
@@ -62,7 +62,7 @@ int sample_discrete_naive_ft(const double *cumsum, const int from, const int to,
   double r = rng.rand_01() * z + d;
 
   for (int i = from; i <= to; ++i){
-    if (r <= cumsum[i]){
+    if (r < cumsum[i]){
       return i;
     }
   }
@@ -82,7 +82,7 @@ size_t sample_discrete(const double* cumsum, const size_t m, int level, Rand& rn
   // bisection search
   while (level > 0){
     c = (a + b) / 2;
-    if (r <= cumsum[c]){
+    if (r < cumsum[c]){
       b = c;
     } else {
       a = c + 1;
@@ -92,7 +92,7 @@ size_t sample_discrete(const double* cumsum, const size_t m, int level, Rand& rn
 
   // linear search
   for (size_t i = a; i <= b; ++i){
-    if (r <= cumsum[i]){
+    if (r < cumsum[i]){
       return i;
     }
   }

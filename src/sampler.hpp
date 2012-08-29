@@ -506,7 +506,8 @@ class Sampler
 
     char do_block_nk()
     {
-      movesize = Utils::sample_discrete_naive(q_p_move_size_, max_move_size_, rng) + 1;
+      //movesize = Utils::sample_discrete_naive(q_p_move_size_, max_move_size_, rng) + 1;
+      movesize = max_move_size_;
 
       for (unsigned char i = 0; i < movesize; ++i){
         bool unique;
@@ -583,6 +584,8 @@ class Sampler
 
       r_move_size_sum_[movesize - 1] += (double)moved / (double)movesize * (log_r >= 0 ? 1.0 : exp(log_r));
       r_move_size_n_[movesize - 1] += 1.0;
+      //r_move_size_sum_[movesize - 1] += (log_r >= 0 ? 1.0 : exp(log_r));
+      //r_move_size_sum_[19] += (double)moved / (double)movesize;
 
       if (log_r >= 0 || log(rng.rand_01()) <= log_r){
         // accepted move
@@ -600,8 +603,14 @@ class Sampler
 
     char do_block_ksc()
     {
-      movesize = Utils::sample_discrete_naive(q_p_move_size_, max_move_size_, rng) + 1;
+      //movesize = Utils::sample_discrete_naive(q_p_move_size_, max_move_size_, rng) + 1;
+      movesize = max_move_size_;
 
+      size_t smallest_model_size = current_model->size();
+
+      // NOTE: NO support for effect types other than additive
+
+      // select variables and get the size of the smallest possible model
       for (unsigned char i = 0; i < movesize; ++i){
         bool unique;
         size_t ind;
@@ -619,44 +628,82 @@ class Sampler
           }
         } while(!unique);
         move_inds[i] = ind;
-      }
 
-      // NOTE: NO support for effect types other than additive
-      unsigned char moved = 0, n_gamma1_forward = 0, n_gamma1_backward = 0;
-      double log_mpc = 0.0;
-      double inv_tau2_alpha2_tmp[2];
-
-      double gamma_one_prob = exp(prior->compute_log_change_on_add(current_model->Ns, current_model->size(), DataModel::A));
-      gamma_one_prob = gamma_one_prob / (gamma_one_prob + 1.0);
-
-      for (unsigned char i = 0; i < movesize; ++i){
-        size_t ind = move_inds[i];
-        // sample \gamma_i = 0 or 1 according to prior for each
-        if (rng.rand_01() < gamma_one_prob){
-          // set gamma_i = 1
-          ++n_gamma1_forward;
-
-          if (new_model->model_inds[ind] < 0){
-            log_mpc += prior->compute_log_change_on_add(new_model->Ns, new_model->size(), DataModel::A);
-
-            prepare_add_new_term(ind, data_model->types[0], inv_tau2_alpha2_tmp, rng);
-            new_model->add_term(ind, 0, inv_tau2_alpha2_tmp);
-
-            ++moved;
-          } else {
-            ++n_gamma1_backward; // keep at 1
-          }
-        } else {
-          // set gamma_i = 0
-          int32_t model_ind = new_model->model_inds[ind];
-          if (model_ind >= 0){
-            log_mpc += prior->compute_log_change_on_rem(new_model->Ns, new_model->size(), DataModel::A);
-            new_model->remove_term(model_ind);
-            ++moved;
-            ++n_gamma1_backward; // change to 1
-          }
+        if (current_model->model_inds[ind] >= 0){
+          --smallest_model_size;
         }
       }
+
+      // evaluate model prior for the model sizes from smallest to largest possible
+      // use log probabilities, normalized by the smallest model
+      double* log_model_probabilities = new double[movesize + 1];
+      double* cumulative_model_probabilities = new double[movesize + 1];
+
+      log_model_probabilities[0] = 0;
+      int Ns_old[4] = {smallest_model_size, 0.0, 0.0, 0.0};
+      for (unsigned char i = 1; i <= movesize; ++i){
+        // cumulative change from smallest to largest
+        log_model_probabilities[i] = log_model_probabilities[i-1]
+            + prior->compute_log_change_on_add(Ns_old, Ns_old[0], DataModel::A);
+        ++Ns_old[0];
+      }
+      // multiply each by the number of such sized models in the proposal set
+      // compute cumulative distribution
+      cumulative_model_probabilities[0] = 1.0;
+      for (unsigned char i = 1; i <= movesize; ++i){
+        cumulative_model_probabilities[i] = cumulative_model_probabilities[i-1] +
+               exp(Utils::lognchoosek(movesize, i) + log_model_probabilities[i]);
+      }
+
+      // sample model size (as number of additions to the possible smallest model size)
+      int modelsize = Utils::sample_discrete_naive(cumulative_model_probabilities, movesize+1, rng);
+
+      double log_q_forward = log_model_probabilities[modelsize];
+      double log_q_backward = log_model_probabilities[current_model->size() - smallest_model_size];
+
+      delete[] log_model_probabilities;
+      delete[] cumulative_model_probabilities;
+
+      // sample a model of that size (first modelsize inds are to be included,
+      // the rest excluded from the new model)
+      for (int i = 0; i < (modelsize-1); ++i){
+        int j = std::floor((movesize - i) * rng.rand_01()) + i;
+        size_t tmp = move_inds[i];
+        move_inds[i] = move_inds[j];
+        move_inds[j] = tmp;
+      }
+
+      // compute the new model
+      unsigned char moved = 0;
+      double inv_tau2_alpha2_tmp[2];
+      double log_mpc = 0.0;
+
+      // do possible removals first
+      for (int i = modelsize; i < movesize; ++i){
+        int modelind = new_model->model_inds[move_inds[i]];
+
+        // if in model, need to remove
+        if (modelind >= 0){
+          log_mpc += prior->compute_log_change_on_rem(new_model->Ns, new_model->size(), DataModel::A);
+
+          new_model->remove_term(modelind);
+          ++moved;
+        }
+      }
+      // then additions
+      for (int i = 0; i < modelsize; ++i){
+        int modelind = new_model->model_inds[move_inds[i]];
+
+        // if not in model, need to add
+        if (modelind < 0){
+          log_mpc += prior->compute_log_change_on_add(new_model->Ns, new_model->size(), DataModel::A);
+
+          prepare_add_new_term(move_inds[i], data_model->types[0], inv_tau2_alpha2_tmp, rng);
+          new_model->add_term(move_inds[i], 0, inv_tau2_alpha2_tmp);
+          ++moved;
+        }
+      }
+
 
       if (moved == 0){
         r_move_size_sum_[movesize - 1] += 0.0;
@@ -664,14 +711,6 @@ class Sampler
         return 0;
       }
 
-      double log_q_forward = n_gamma1_forward * log(gamma_one_prob) + (movesize - n_gamma1_forward) * log(1.0 - gamma_one_prob);
-      assert(std::isfinite(log_q_forward));
-
-      double bw_gamma_one_prob = exp(prior->compute_log_change_on_add(new_model->Ns, new_model->size(), DataModel::A));
-      bw_gamma_one_prob = bw_gamma_one_prob / (bw_gamma_one_prob + 1.0);
-
-      double log_q_backward = n_gamma1_backward * log(bw_gamma_one_prob) + (movesize - n_gamma1_backward) * log(1.0 - bw_gamma_one_prob);
-      assert(std::isfinite(log_q_backward));
 
       double log_r = log_q_backward - log_q_forward;
       log_r += log_mpc + new_model->log_likelihood_ - current_model->log_likelihood_;
@@ -679,6 +718,7 @@ class Sampler
 
       r_move_size_sum_[movesize - 1] += (double)moved / (double)movesize * (log_r >= 0 ? 1.0 : exp(log_r));
       r_move_size_n_[movesize - 1] += 1.0;
+      //r_move_size_sum_[movesize - 1] += (log_r >= 0 ? 1.0 : exp(log_r));
 
       if (log_r >= 0 || log(rng.rand_01()) <= log_r){
         // accepted move
@@ -700,7 +740,8 @@ class Sampler
       // maximum move size = cm->size() removals + (m_g - cm->size()) additions
       //                   = m_g
       // maxmovesize parameter is enforced to be equal or less than m_g
-      movesize = Utils::sample_discrete_naive(q_p_move_size_, max_move_size_, rng) + 1;
+      //movesize = Utils::sample_discrete_naive(q_p_move_size_, max_move_size_, rng) + 1;
+      movesize = max_move_size_;
 
       double inv_tau2_alpha2_tmp[2];
 
@@ -780,7 +821,7 @@ class Sampler
           ++m_inmodel;
           // wasteful to remove and then add back, but exhaustive comp requires
           // that the variables involved are at the back (instead of remove, we
-          // could just move the term to be the last one)
+          // could just move the term to be the last one
           new_model->remove_term(model_ind);
 
           currentmodel_binary |= (1 << i);
