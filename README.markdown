@@ -391,6 +391,22 @@ and [LINPACK][] libraries.
   [LINPACK]: http://www.netlib.org/linpack/
 
 
+Unit tests
+----------
+Unit tests are located in the src/tests-subdirectory.
+
+Additional dependencies to compile the tests include [googletest][] and
+[Cuba][].
+
+Tests in SamplerTestsF cases will fail as the threshold is set to too
+stringent. The differences in the posterior inclusion probabilities between
+the two computation methods are then printed and may be examined. Note that
+neither methods is exact.
+
+  [googletest]: http://code.google.com/p/googletest/
+  [Cuba]:       http://www.feynarts.de/cuba/
+
+
 License
 -------
 
