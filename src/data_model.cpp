@@ -109,7 +109,7 @@ void DataModel::update_prexx_cov(const size_t snp, double* pre_xx) const
   double* xxloc = pre_xx;
   char* miss_val_snp = miss_val_[snp];
   char val = 0;
-  double val_g = 0.0, sum_val_g, sum_val_g2, sum_a_times_sum_h = 0.0;
+  double val_g = 0.0, sum_val_g, sum_val_g2, sum_a_times_sum_h = 0.0, old_sum;
 
   if (allow_types(AH)){
     sum_a_times_sum_h = pre_xx[0] * pre_xx[2];
@@ -123,7 +123,7 @@ void DataModel::update_prexx_cov(const size_t snp, double* pre_xx) const
     sum_val_g2 = 0.0;
     for (size_t i = 1; i <= data_->miss_loc()[snp][0]; ++i){
       val = miss_val_snp[i];
-      switch (types[t]){
+      switch ((ef_t)t){
         case A:
           val_g = (double)val;
           break;
@@ -143,12 +143,13 @@ void DataModel::update_prexx_cov(const size_t snp, double* pre_xx) const
       sum_val_g2 += val_g * val_g;
     }
     // update sum (contribution was 0)
+    old_sum = *xxloc;
     *xxloc += sum_val_g;
     xxloc++;
 
     // update var
     //*xxloc += val_g * val_g - (2 * (*xxloc) * val_g + val_g * val_g)/n;
-    *xxloc += sum_val_g2 - sum_val_g * ((*xxloc) * 2.0 + sum_val_g) / (double)n;
+    *xxloc += sum_val_g2 - sum_val_g * (old_sum * 2.0 + sum_val_g) / (double)n;
     xxloc++;
   }
   if (allow_types(AH)){

@@ -108,12 +108,12 @@ class VectorView
     VectorView block(const size_t begin, const size_t length)
     {
       assert(begin + length <= length_);
-      return VectorView(data_ + begin, length_mem_ - length, length);
+      return VectorView(data_ + begin, length_mem_ - begin, length);
     }
     const VectorView block(const size_t begin, const size_t length) const
     {
       assert(begin + length <= length_);
-      return VectorView(data_ + begin, length_mem_ - length, length);
+      return VectorView(data_ + begin, length_mem_ - begin, length);
     }
     void resize(const size_t length)
     {
