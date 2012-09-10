@@ -182,6 +182,12 @@ class Model
     const int* get_Ns() const {
       return Ns;
     }
+    const SymmMatrixView get_xx() const {
+      return xx;
+    }
+    const VectorView get_xy() const {
+      return xy;
+    }
 
     void set_inv_tau2_alpha2_value(const unsigned int x_ind, double value)
     {

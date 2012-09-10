@@ -337,6 +337,7 @@ class Sampler
     }
 
     void sample();
+    void sample_missing();
     void initialize_p_proposal()
     {
       data_model->sample_missing(current_model->model_inds, rng);
@@ -386,6 +387,18 @@ class Sampler
                basename.substr(0, basename.length() - 1) + "_prior.txt", false);
 
       prior->print(filename);
+    }
+    Prior* get_prior() {
+      return prior;
+    }
+    DataModel* get_data_model() {
+      return data_model;
+    }
+    Model* get_current_model(){
+      return current_model;
+    }
+    Model* get_new_model(){
+      return new_model;
     }
 
     const double get_alpha_value() const {
@@ -474,7 +487,6 @@ class Sampler
     unsigned char* dr_bit_to_normalized_order;
 
     // methods
-    void sample_missing();
     void compute_proposal_dist(const double* p_proposal, const double q_add_min,
                                double* q_add) const;
     void compute_proposal_types_dist(const double*const* p_proposal_types,
