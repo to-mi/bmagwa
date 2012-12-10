@@ -10,6 +10,10 @@ using Bayesian variable selection and model averaging (Peltola et al., 2012).
 
 References:
 
+ * Peltola T, Marttinen P, Vehtari A (2012) Finite Adaptation and Multistep
+   Moves in the Metropolis-Hastings Algorithm for Variable Selection in
+   Genome-Wide Association Analysis. PLoS One 7(11): e49445.
+   http://www.plosone.org/article/info:doi/10.1371/journal.pone.0049445
  * Peltola T, Marttinen P, Jula A, Salomaa V, Perola M, Vehtari A (2012)
    Bayesian Variable Selection in Searching for Additive and Dominant
    Effects in Genome-Wide Data. PLoS ONE 7(1): e29115.
