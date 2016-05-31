@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Postprocessing utilities for BMAGWA software (v2.0)
 # Author: Tomi Peltola <tomi.peltola@aalto.fi>
 

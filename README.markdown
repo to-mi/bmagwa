@@ -196,7 +196,7 @@ Output files and formats
 ------------------------
 
 Most of the output files are in binary format. A Python script/module to convert
-the results to text file format is included (run `python postprocess.py` for 
+the results to text file format is included (run `python bmagwa_postprocess.py` for 
 help). Note that the binary format may not be portable across computers with
 different architectures.
 
@@ -338,8 +338,8 @@ You may then use the provided Python script to convert the binary files to text
 files and to compute posterior association probabilities from the MCMC chain. On
 command line:
 
-    python postprocess.py convert testdata/results
-    python postprocess.py mcmcpos testdata/results/chain 10000 50000 1
+    python bmagwa_postprocess.py convert testdata/results
+    python bmagwa_postprocess.py mcmcpos testdata/results/chain 10000 50000 1
 
 The .txt files are probably easy to open in your preferred numerical software 
 for further analysis. For example, in Matlab:
