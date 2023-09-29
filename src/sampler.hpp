@@ -4,17 +4,17 @@
  *
  * http://becs.aalto.fi/en/research/bayes/bmagwa/
  * Copyright 2012 Tomi Peltola <tomi.peltola@aalto.fi>
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -652,7 +652,7 @@ class Sampler
       double* cumulative_model_probabilities = new double[movesize + 1];
 
       log_model_probabilities[0] = 0;
-      int Ns_old[4] = {smallest_model_size, 0.0, 0.0, 0.0};
+	  int Ns_old[4] = {static_cast<int>(smallest_model_size), 0, 0, 0};
       for (unsigned char i = 1; i <= movesize; ++i){
         // cumulative change from smallest to largest
         log_model_probabilities[i] = log_model_probabilities[i-1]
