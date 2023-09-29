@@ -1,12 +1,12 @@
 # Change the following to match your environment.
 # Specifically, you may have to add -Lpath or -Ipath to FLAGS to point to correct paths of boost/blas/lapack libraries.
 CXX=g++
-CXXFLAGS=-std=c++14 -DNDEBUG -O3 -march=native -Wall -c -I/opt/homebrew/include -I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/gcc/include
+CXXFLAGS=-DNDEBUG -O3 -march=native -Wall -c
 CC=gcc
 CFLAGS=-O0 -Wall -c
-FC=gfortran
+FC=gcc
 FCFLAGS=-m64 -c
-LDFLAGS=-L/opt/homebrew/opt/gcc/lib/gcc/13 -L/opt/homebrew/opt/openblas/lib -lopenblas -lpthread -lgfortran
+LDFLAGS=-lblas -llapack -lpthread -lgfortran -lrt
 
 
 CXXSOURCES=src/data.cpp src/data_model.cpp src/main.cpp src/matrix.cpp src/model.cpp src/prior.cpp src/sampler.cpp src/symmmatrix.cpp src/utils.cpp src/vector.cpp src/inih/cpp/INIReader.cpp
